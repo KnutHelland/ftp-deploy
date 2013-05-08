@@ -3,7 +3,8 @@
   (:require [clojure.string :as str]
             [clojure.data :as data]
             [clojure.java.io :as io]
-            [clojure.edn :as edn])
+            [clojure.edn :as edn]
+            [clansi.core :as clansi])
   (:use [clojure.tools.cli :only [cli]])
   (:import [java.util Calendar]
            [java.net URL URLDecoder]
@@ -43,10 +44,10 @@
 (defn concat-path
   "Concatenates a lot of arguments into a string"
   [& segments]
-  (subs (apply str (map (fn [seg]
-                          (if-not (#{"."} seg)
-                            (str "/" seg)
-                            "")) segments)) 1))
+  (str/replace (subs (apply str (map (fn [seg]
+                            (if-not (#{"."} seg)
+                              (str "/" seg)
+                              "")) segments)) 1) #"\/{2,}" "/"))
 
 (defn get-dirs
   "Retrieves a list of dirnames from topmost level to right."
@@ -69,7 +70,7 @@
   [url]
   (let [^FTPClient client (FTPClient.)
         ^URL url (io/as-url url)]
-    (verbose "Trying to connect to FTP... ")
+    (verbose "Trying to connect to FTP")
     (.connect client
               (.getHost url)
               (if (= -1 (.getPort url))
@@ -78,9 +79,9 @@
     (let [reply (.getReplyCode client)]
       (if-not (FTPReply/isPositiveCompletion reply)
         (do (.disconnect client)
-            (verboseln " REFUSED!")
+            (verboseln (clansi/style " ERROR!" :red))
             nil)
-        (do (verboseln " Success!")
+        (do (verboseln (clansi/style " Success!" :green))
             client)))))
 
 (defn ftp-try-connect
@@ -91,7 +92,7 @@
         i (atom 0)]
     (while (and (not @client) (< @i n))
       (when (> @i 0)
-        (verboseln "Waiting 4 secs and trying again.")
+        (verboseln (clansi/style "Waiting 4 secs and trying again." :red))
         (Thread/sleep 4000))
       (reset! client (ftp-connect url))
       (swap! i inc))
@@ -102,12 +103,12 @@
   [^FTPClient client user pass]
   (verbose "Logging in as" user)
   (if-not (.login client user pass)
-    (do (verboseln " ERROR!") nil)
+    (do (verboseln (clansi/style " ERROR!" :red)) nil)
     (do (.setControlKeepAliveTimeout client 300)
         (.enterLocalPassiveMode client)
         (.setFileType client FTP/ASCII_FILE_TYPE)
         ;(.setBufferSize client 1024000)
-        (verboseln " Success!")
+        (verboseln (clansi/style " Success!" :green))
         true)))
 
 (defn ftp-close
@@ -135,30 +136,41 @@
 (defn upload-file
   "Uploads the file to the destination. Creates directories if necessary."
   [^FTPClient client ^File src ^String dest]
-  (let [dest-file (io/file dest)
-        dirs (get-dirs dest)]
+  (let [dirs (get-dirs dest)]
     (doall
      (for [dir dirs]
        (when-not (.changeWorkingDirectory client dir)
-         (verbose "Creating directory " dir)
+         (verbose "Creating directory" (clansi/style dir :cyan))
          (if (.makeDirectory client dir)
-           (verboseln " Success!")
-           (verboseln " FAIL!")))))
+           (verboseln (clansi/style " Success!" :green))
+           (verboseln (clansi/style " FAIL!" :red))))))
     (when (.isFile src)
-      (verbose "Uploading file " src " to dest: " dest-file)
+      (verbose "Uploading file" (clansi/style (.getPath src) :cyan)
+               "to" (clansi/style dest :cyan))
       (if (with-open [instream (java.io.FileInputStream. src)]
             (.storeFile ^FTPClient client ^String dest ^java.io.FileInputStream instream))
-        (verboseln " Sucess!")
-        (verboseln " FAIL!")))))
+        (verboseln (clansi/style " Sucess!" :green))
+        (verboseln (clansi/style " FAIL!" :red))))
+    (when (and (.isDirectory src) (not (.changeWorkingDirectory client dest)))
+      (verbose "Creating directory" (clansi/style dest :cyan))
+      (if (.makeDirectory client dest)
+        (verboseln (clansi/style " Success!" :green))
+        (verboseln (clansi/style " FAIL!" :red))))))
 
 (defn delete-file
-  "Deletes the file from FTP."
-  [^FTPClient client path]
-  (verbose "Deleting file: " path)
-  (if (.deleteFile client path)
-    (verboseln " Success!")
-    (verboseln " FAIL!")))
-
+  "Deletes the file/directory from FTP."
+  [^FTPClient client ^String path]
+  (if (.changeWorkingDirectory client path)
+    (do
+      (verbose (clansi/style "Deleting directory" :red) (clansi/style path :cyan))
+      (if (.removeDirectory client path)
+        (verboseln (clansi/style " Success!" :green))
+        (verboseln (clansi/style " FAIL!" :red))))
+    (do
+      (verbose (clansi/style "Deleting file" :red) (clansi/style path :cyan))
+      (if (.deleteFile client path)
+        (verboseln (clansi/style " Success!" :green))
+        (verboseln (clansi/style " FAIL!" :red))))))
 
 (defn walk-files
   "Walks through all files matched by settings and calls callback with
@@ -184,18 +196,12 @@
    a list of eighter [:upload src dest] [:delete target]"
   [settings jobs]
   (when (< 0 (count jobs))
-    (if-not (= nil (:host settings))
-      (let [client (ensure-connection @global-ftp-connection (:host settings))]
-        (reset! global-ftp-connection client)
-        (dorun (for [job jobs]
-                 (condp = (first job)
-                     :upload (upload-file client (second job) (nth job 2))
-                     :delete (delete-file client (second job))))))
+    (let [client (ensure-connection @global-ftp-connection (:host settings))]
+      (reset! global-ftp-connection client)
       (dorun (for [job jobs]
-               (do (verbose "Job: " job)
-                (condp = (first job)
-                    :upload (verboseln "Should upload " (second job) " to " (nth job 1))
-                    :delete (verboseln "Should delete " (second job)))))))))
+               (condp = (first job)
+                 :upload (upload-file client (second job) (nth job 2))
+                 :delete (delete-file client (second job))))))))
 
 (defn run!
   "Runs the settings configuration"
