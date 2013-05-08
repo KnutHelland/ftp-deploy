@@ -18,6 +18,17 @@ In your project, create a config text-file like this:
 
 and save it as for example "production.ftp-profile"
 
+*:host* should follow the pattern above. It cannot contain any directories
+after hostname.
+
+*:dest* The destination directory on the server.
+
+*:directories* List of local directories to upload, and their destination
+directories relative to *:dest* on server.
+
+*:files* List of additional files to upload, and their filenames relative to
+*:dest* folder on the server.
+
 
 ## Run
 
