@@ -46,7 +46,7 @@
   (subs (apply str (map (fn [seg]
                           (if-not (#{"."} seg)
                             (str "/" seg)
-                            seg)) segments)) 1))
+                            "")) segments)) 1))
 
 (defn get-dirs
   "Retrieves a list of dirnames from topmost level to right."
@@ -156,7 +156,7 @@
   [^FTPClient client path]
   (verbose "Deleting file: " path)
   (if (.deleteFile client path)
-    (verboseln " Sucess!")
+    (verboseln " Success!")
     (verboseln " FAIL!")))
 
 
@@ -209,7 +209,7 @@
   (let [last-check (atom 0)      ; timestamp when last checked. 0 first loop
         indexed-files (atom #{}) ; files we have handled last loop
         files (atom #{})         ; files which exists now (may differ from indexed)
-        jobs (atom [])]          ; tasks for (process-jobs!)
+        jobs (atom #{})]         ; tasks for (process-jobs!)
     (while true
       ;; Walk files:
       (walk-files
@@ -237,13 +237,13 @@
       ;; Prepare for next loop.
       (reset! indexed-files @files)
       (reset! files #{})
-      (reset! jobs [])
+      (reset! jobs #{})
       (reset! last-check (- (System/currentTimeMillis) 1000))
       (Thread/sleep 1000))))
 
 (defn -main
   [config & args]
-  (let [settings (edn/read-string (slurp (str config ".clj")))]
+  (let [settings (edn/read-string (slurp config))]
     (if (= (first args) "--watch")
       (watch! settings)
       (run! settings))))
