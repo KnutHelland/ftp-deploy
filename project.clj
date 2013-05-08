@@ -6,4 +6,4 @@
   :main helland.ftp-deploy.core
   :dependencies [[org.clojure/clojure "1.5.1"]
                  [org.clojure/tools.cli "0.2.2"]
-                 [com.velisco/clj-ftp "0.2.0"]])
+                 [commons-net "3.1"]])
