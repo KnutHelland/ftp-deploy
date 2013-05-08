@@ -4,6 +4,8 @@ A command line tool for easy deployment of your application to a
 ftp-server. Can also watch your files and reflect your actions on the
 server.
 
+![Screenshot](doc/screenshot.png "Screenshot")
+
 ## Config file
 
 In your project, create a config text-file like this:
