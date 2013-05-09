@@ -8,6 +8,7 @@
   (:use [clojure.tools.cli :only [cli]])
   (:import [java.util Calendar]
            [java.net URL URLDecoder]
+           [java.text SimpleDateFormat]
            [java.io File]
            [org.apache.commons.net.ftp FTP FTPClient FTPFile FTPReply]))
 
@@ -33,16 +34,35 @@
 
 ;;;; Debug funcs
 
+(defn text-timestamp
+  "Creates a timestamp"
+  []
+  (let [c (Calendar/getInstance)
+        f (SimpleDateFormat. "HH:mm:ss")]
+    (.format f (.getTime c))))
+
 (defn verboseln
   "Verbose debug info"
   [& strings]
   (apply println strings))
+
+(defn tverboseln
+  "Verbose debug info with timestamp"
+  [& strings]
+  (apply (partial verboseln (str "[" (text-timestamp) "]"))
+         strings))
 
 (defn verbose
   "Verbose debug info"
   [& strings]
   (apply print strings)
   (flush))
+
+(defn tverbose
+  "Verbose debug info with timestamp"
+  [& strings]
+  (apply (partial verbose (str "[" (text-timestamp) "]"))
+         strings))
 
 
 ;;;; File system
@@ -105,7 +125,7 @@
   [url]
   (let [^FTPClient client (FTPClient.)
         ^URL url (io/as-url url)]
-    (verbose "Trying to connect to FTP")
+    (tverbose "Trying to connect to FTP")
     (.connect client
               (.getHost url)
               (if (= -1 (.getPort url))
@@ -127,7 +147,7 @@
         i (atom 0)]
     (while (and (not @client) (< @i n))
       (when (> @i 0)
-        (verboseln (clansi/style "Waiting 4 secs and trying again." :red))
+        (tverboseln (clansi/style "Waiting 4 secs and trying again." :red))
         (Thread/sleep 4000))
       (reset! client (ftp-connect url))
       (swap! i inc))
@@ -136,7 +156,7 @@
 (defn ftp-login
   "Login the user and setups the connection. Returns boolean"
   [^FTPClient client user pass]
-  (verbose "Logging in as" user)
+  (tverbose "Logging in as" user)
   (if-not (.login client user pass)
     (do (verboseln (clansi/style " ERROR!" :red)) nil)
     (do (.setControlKeepAliveTimeout client 300)
@@ -176,19 +196,19 @@
     (doall
      (for [dir dirs]
        (when-not (.changeWorkingDirectory client dir)
-         (verbose "Creating directory" (clansi/style dir :cyan))
+         (tverbose "Creating directory" (clansi/style dir :cyan))
          (if (.makeDirectory client dir)
            (verboseln (clansi/style " Success!" :green))
            (verboseln (clansi/style " FAIL!" :red))))))
     (when (.isFile src)
-      (verbose "Uploading file" (clansi/style (.getPath src) :cyan)
+      (tverbose "Uploading file" (clansi/style (.getPath src) :cyan)
                "to" (clansi/style dest :cyan))
       (if (with-open [instream (java.io.FileInputStream. src)]
             (.storeFile ^FTPClient client ^String dest ^java.io.FileInputStream instream))
         (verboseln (clansi/style " Sucess!" :green))
         (verboseln (clansi/style " FAIL!" :red))))
     (when (and (.isDirectory src) (not (.changeWorkingDirectory client dest)))
-      (verbose "Creating directory" (clansi/style dest :cyan))
+      (tverbose "Creating directory" (clansi/style dest :cyan))
       (if (.makeDirectory client dest)
         (verboseln (clansi/style " Success!" :green))
         (verboseln (clansi/style " FAIL!" :red))))))
@@ -198,12 +218,12 @@
   [^FTPClient client ^String path]
   (if (.changeWorkingDirectory client path)
     (do
-      (verbose (clansi/style "Deleting directory" :red) (clansi/style path :cyan))
+      (tverbose (clansi/style "Deleting directory" :red) (clansi/style path :cyan))
       (if (.removeDirectory client path)
         (verboseln (clansi/style " Success!" :green))
         (verboseln (clansi/style " FAIL!" :red))))
     (do
-      (verbose (clansi/style "Deleting file" :red) (clansi/style path :cyan))
+      (tverbose (clansi/style "Deleting file" :red) (clansi/style path :cyan))
       (if (.deleteFile client path)
         (verboseln (clansi/style " Success!" :green))
         (verboseln (clansi/style " FAIL!" :red))))))
@@ -278,6 +298,9 @@
 
         ;; Run job
         (process-jobs! settings @jobs)
+
+        (if-not (empty? @jobs)
+          (tverboseln (clansi/style "Waiting for changes..." :blue)))
 
         ;; Prepare for next loop.
         (reset! indexed-files @files)
