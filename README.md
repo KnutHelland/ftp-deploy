@@ -15,21 +15,25 @@ In your project, create a config text-file like this:
  :dest "/www/"
  :directories [["local/directory/target/compiled-javascript" "js"]
  	       ["public-files/" "public"]]
+ :exceptions ["*.DS_Store" "#*" ".#*" ".log"]
  :files [["/additional/file.txt" "with-another-name-online.txt"]]}
 ```
 
 and save it as for example "production.ftp-profile"
 
-*:host* should follow the pattern above. It cannot contain any directories
+**:host** should follow the pattern above. It cannot contain any directories
 after hostname.
 
-*:dest* The destination directory on the server.
+**:dest** The destination directory on the server.
 
-*:directories* List of local directories to upload, and their destination
-directories relative to *:dest* on server.
+**:directories** List of local directories to upload, and their destination
+directories relative to **:dest** on server.
 
-*:files* List of additional files to upload, and their filenames relative to
-*:dest* folder on the server.
+**:exceptions** List of exceptions in .gitignore style. (not operator (!) not
+supported yet)
+
+**:files** List of additional files to upload, and their filenames relative to
+**:dest** folder on the server.
 
 
 ## Run
