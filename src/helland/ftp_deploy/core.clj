@@ -11,6 +11,17 @@
            [java.io File]
            [org.apache.commons.net.ftp FTP FTPClient FTPFile FTPReply]))
 
+;;
+;; Settings format:
+;;
+;; {:host "ftp://user:pass@ftp.server.com/destination/path"
+;;  :directories
+;;     [["directory/to/watch" "dest/on/server"]
+;;      ["another/dir" "dest/on/server"]]
+;;  :files [["../settings.php" "dest/on/server/settings.php"]]
+;;  :exceptions [".#*" "#*" "*.DS_Store"]}
+;;
+
 (set! *warn-on-reflection* true)
 
 (def global-ftp-connection (atom nil))
@@ -49,10 +60,17 @@
                               (str "/" seg)
                               "")) segments)) 1) #"\/{2,}" "/"))
 
+(defn ->dest-path
+  "Parsing settings and path-segments and creates the destination
+   path string"
+  ^String [settings & path-segments]
+  (let [dest (.getPath (io/as-url (:host settings)))]
+    (apply (partial concat-path dest) path-segments)))
+
 (defn get-dirs
-  "Retrieves a list of dirnames from topmost level to right."
+  "Retrieves a list of dirnames from left to right."
   [file]
-  (let [file (io/file file)]
+  (let [file (io/as-file file)]
    (loop [f (if (.isDirectory file) file (.getParentFile file))
           path '()]
      (if f
@@ -134,7 +152,8 @@
       client)))
 
 (defn upload-file
-  "Uploads the file to the destination. Creates directories if necessary."
+  "Uploads the file or directory to the destination. Creates
+  directories if necessary."
   [^FTPClient client ^File src ^String dest]
   (let [dirs (get-dirs dest)]
     (doall
@@ -176,20 +195,22 @@
   "Walks through all files matched by settings and calls callback with
    two args: (java.io.File) src and (string) dst."
   [callback settings]
+  ;; :directories
   (dorun
    (for [dir (:directories settings)
          :let [dest (second dir)]
          ^File file (rest (walk-dir (first dir)))
          :let [dest-filename (subs (.getPath file) (count (first dir)))]
          :when (not (except? (.getName file) (:exceptions settings)))]
-     (callback file (concat-path (:dest settings) dest dest-filename))))
+     (callback file (->dest-path settings dest dest-filename))))
+  ;; :files
   (dorun
    (for [rules (:files settings)
          :let [^File file (io/file (first rules))
                dest (second rules)]
          :when (and (not (except? (.getName file) (:exceptions settings)))
                     (.isFile file))]
-     (callback file (concat-path (:dest settings) dest)))))
+     (callback file (->dest-path settings dest)))))
 
 (defn process-jobs!
   "Connects to FTP and uploads or deletes files. Jobs is
@@ -217,35 +238,36 @@
         files (atom #{})         ; files which exists now (may differ from indexed)
         jobs (atom #{})]         ; tasks for (process-jobs!)
     (while true
-      ;; Walk files:
-      (walk-files
-       (fn [^File file dest]
-         (do (if (>= (.lastModified file) @last-check)
-               (swap! jobs conj [:upload file dest]))
-             (swap! files conj [file dest])))
-       settings)
-      
-      ;; Build job
-      (let [diff (data/diff @files @indexed-files)]
-        (when-not (= @last-check 0)
-          (dorun
-           (for [new-file (first diff)]
-             (swap! jobs conj [:upload (first new-file) (second new-file)])))
-          (dorun
-           (for [removed-file (second diff)]
-             (do
-               (swap! jobs conj [:delete (second removed-file)])
-               (swap! indexed-files #(remove #{removed-file} %)))))))
+      (do
+        ;; Walk files:
+        (walk-files
+         (fn [^File file dest]
+           (do (if (>= (.lastModified file) @last-check)
+                 (swap! jobs conj [:upload file dest]))
+               (swap! files conj [file dest])))
+         settings)
+        
+        ;; Build job
+        (let [diff (data/diff @files @indexed-files)]
+          (when-not (= @last-check 0)
+            (dorun
+             (for [new-file (first diff)]
+               (swap! jobs conj [:upload (first new-file) (second new-file)])))
+            (dorun
+             (for [removed-file (second diff)]
+               (do
+                 (swap! jobs conj [:delete (second removed-file)])
+                 (swap! indexed-files #(remove #{removed-file} %)))))))
 
-      ;; Run job
-      (process-jobs! settings @jobs)
+        ;; Run job
+        (process-jobs! settings @jobs)
 
-      ;; Prepare for next loop.
-      (reset! indexed-files @files)
-      (reset! files #{})
-      (reset! jobs #{})
-      (reset! last-check (- (System/currentTimeMillis) 1000))
-      (Thread/sleep 1000))))
+        ;; Prepare for next loop.
+        (reset! indexed-files @files)
+        (reset! files #{})
+        (reset! jobs #{})
+        (reset! last-check (System/currentTimeMillis))
+        (Thread/sleep 1000)))))
 
 (defn -main
   [config & args]

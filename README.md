@@ -11,8 +11,7 @@ server.
 In your project, create a config text-file like this:
 
 ```clojure
-{:host "ftp://username:password@ftp.yourserver.com/"
- :dest "/www/"
+{:host "ftp://username:password@ftp.yourserver.com/www/"
  :directories [["local/directory/target/compiled-javascript" "js"]
  	       ["public-files/" "public"]]
  :exceptions ["*.DS_Store" "#*" ".#*" ".log"]
@@ -21,19 +20,16 @@ In your project, create a config text-file like this:
 
 and save it as for example "production.ftp-profile"
 
-**:host** should follow the pattern above. It cannot contain any directories
-after hostname.
-
-**:dest** The destination directory on the server.
+**:host** should follow the pattern above.
 
 **:directories** List of local directories to upload, and their destination
-directories relative to **:dest** on server.
+directories relative to path in **:host**
 
 **:exceptions** List of exceptions in .gitignore style. (not operator (!) not
 supported yet)
 
 **:files** List of additional files to upload, and their filenames relative to
-**:dest** folder on the server.
+path in **:host**.
 
 
 ## Run
