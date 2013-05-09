@@ -11,20 +11,27 @@
            [java.io File]
            [org.apache.commons.net.ftp FTP FTPClient FTPFile FTPReply]))
 
-;;
-;; Settings format:
-;;
-;; {:host "ftp://user:pass@ftp.server.com/destination/path"
-;;  :directories
-;;     [["directory/to/watch" "dest/on/server"]
-;;      ["another/dir" "dest/on/server"]]
-;;  :files [["../settings.php" "dest/on/server/settings.php"]]
-;;  :exceptions [".#*" "#*" "*.DS_Store"]}
-;;
+;;;
+;;; Settings format:
+;;;
+;;; {:host "ftp://user:pass@ftp.server.com/destination/path"
+;;;  :directories
+;;;     [["directory/to/watch" "dest/on/server"]
+;;;      ["another/dir" "dest/on/server"]]
+;;;  :files [["../settings.php" "dest/on/server/settings.php"]]
+;;;  :exceptions [".#*" "#*" "*.DS_Store"]}
+;;;
+
+;;;; Global init
 
 (set! *warn-on-reflection* true)
 
-(def global-ftp-connection (atom nil))
+(def global-ftp-connection
+  "Global singleton ftp connection used in the application"
+  (atom nil))
+
+
+;;;; Debug funcs
 
 (defn verboseln
   "Verbose debug info"
@@ -37,36 +44,14 @@
   (apply print strings)
   (flush))
 
+
+;;;; File system
+
 (defn walk-dir
   "Walks recursively through a directory returns a list of all
    java.io.File objects."
   [dir]
   (file-seq (io/file dir)))
-
-(defn gitexception->regex
-  "Takes a git exception string and returns a regex"
-  [exception]
-  (re-pattern (str "^" (str/replace exception #"\*" "(.*?)") "$")))
-
-(defn except?
-  "Should the filename be excepted according to exceptions?"
-  [filename exceptions]
-  (not (nil? (some #(re-matches (gitexception->regex %) filename) exceptions))))
-
-(defn concat-path
-  "Concatenates a lot of arguments into a string"
-  [& segments]
-  (str/replace (subs (apply str (map (fn [seg]
-                            (if-not (#{"."} seg)
-                              (str "/" seg)
-                              "")) segments)) 1) #"\/{2,}" "/"))
-
-(defn ->dest-path
-  "Parsing settings and path-segments and creates the destination
-   path string"
-  ^String [settings & path-segments]
-  (let [dest (.getPath (io/as-url (:host settings)))]
-    (apply (partial concat-path dest) path-segments)))
 
 (defn get-dirs
   "Retrieves a list of dirnames from left to right."
@@ -79,9 +64,40 @@
        path))))
 
 
-;; -----------------------------------------------------------------------------
-;; FTP Functions
-;;
+;;;; Git exception format
+
+(defn gitexception->regex
+  "Takes a git exception string and returns a regex"
+  [exception]
+  (re-pattern (str "^" (str/replace exception #"\*" "(.*?)") "$")))
+
+(defn except?
+  "Should the filename be excepted according to exceptions?"
+  [filename exceptions]
+  (not (nil? (some #(re-matches (gitexception->regex %) filename) exceptions))))
+
+
+;;;; Path string manipulation
+
+(defn concat-path
+  "Concatenates a lot of path segments and concatenates them with
+   slashes. Removes multiple slashes (//// -> /) and single dots /./
+   Use this only with FTP-paths. Other paths are platform dependent."
+  [& segments]
+  (str/replace(subs (apply str (map (fn [seg]
+                            (if-not (#{"."} seg)
+                              (str "/" seg)
+                              "")) segments)) 1) #"\/{2,}" "/"))
+
+(defn ->dest-path
+  "Parsing settings and path-segments and creates the destination
+   path string"
+  ^String [settings & path-segments]
+  (let [dest (.getPath (io/as-url (:host settings)))]
+    (apply (partial concat-path dest) path-segments)))
+
+
+;;;; FTP Functions
 
 (defn ftp-connect
   "Opens a connection to FTP. Returns the connection. Should be
@@ -136,7 +152,7 @@
   (when (.isConnected client)
     (.disconnect client)))
 
-(defn ensure-connection
+(defn ftp-ensure-connection
   "Ensures that the client is a valid and connected FTP-client, or
   reconnects if not."
   [^FTPClient client url]
@@ -152,7 +168,7 @@
             nil)))
       client)))
 
-(defn upload-file
+(defn ftp-upload-file
   "Uploads the file or directory to the destination. Creates
   directories if necessary."
   [^FTPClient client ^File src ^String dest]
@@ -177,7 +193,7 @@
         (verboseln (clansi/style " Success!" :green))
         (verboseln (clansi/style " FAIL!" :red))))))
 
-(defn delete-file
+(defn ftp-delete-file
   "Deletes the file/directory from FTP."
   [^FTPClient client ^String path]
   (if (.changeWorkingDirectory client path)
@@ -218,19 +234,19 @@
    a list of eighter [:upload src dest] [:delete target]"
   [settings jobs]
   (when (< 0 (count jobs))
-    (let [client (ensure-connection @global-ftp-connection (:host settings))]
+    (let [client (ftp-ensure-connection @global-ftp-connection (:host settings))]
       (reset! global-ftp-connection client)
       (dorun (for [job jobs]
                (condp = (first job)
-                 :upload (upload-file client (second job) (nth job 2))
-                 :delete (delete-file client (second job))))))))
+                 :upload (ftp-upload-file client (second job) (nth job 2))
+                 :delete (ftp-delete-file client (second job))))))))
 
 (defn run!
   "Runs the settings configuration"
   [settings]
-  (let [client (ensure-connection @global-ftp-connection (:host settings))]
+  (let [client (ftp-ensure-connection @global-ftp-connection (:host settings))]
     (reset! global-ftp-connection client)
-    (walk-files (partial upload-file client) settings)))
+    (walk-files (partial ftp-upload-file client) settings)))
 
 (defn watch!
   [settings]
