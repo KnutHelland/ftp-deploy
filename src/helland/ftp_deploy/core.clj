@@ -34,7 +34,8 @@
 (defn verbose
   "Verbose debug info"
   [& strings]
-  (apply print strings))
+  (apply print strings)
+  (flush))
 
 (defn walk-dir
   "Walks recursively through a directory returns a list of all
@@ -266,7 +267,7 @@
         (reset! indexed-files @files)
         (reset! files #{})
         (reset! jobs #{})
-        (reset! last-check (System/currentTimeMillis))
+        (reset! last-check (- (System/currentTimeMillis) 1000))
         (Thread/sleep 1000)))))
 
 (defn -main
