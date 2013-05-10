@@ -275,39 +275,38 @@
         files (atom #{})         ; files which exists now (may differ from indexed)
         jobs (atom #{})]         ; tasks for (process-jobs!)
     (while true
-      (do
-        ;; Walk files:
-        (walk-files
-         (fn [^File file dest]
-           (do (if (>= (.lastModified file) @last-check)
-                 (swap! jobs conj [:upload file dest]))
-               (swap! files conj [file dest])))
-         settings)
-        
-        ;; Build job
-        (let [diff (data/diff @files @indexed-files)]
-          (when-not (= @last-check 0)
-            (dorun
-             (for [new-file (first diff)]
-               (swap! jobs conj [:upload (first new-file) (second new-file)])))
-            (dorun
-             (for [removed-file (second diff)]
-               (do
-                 (swap! jobs conj [:delete (second removed-file)])
-                 (swap! indexed-files #(remove #{removed-file} %)))))))
+      ;; Walk files:
+      (walk-files
+       (fn [^File file dest]
+         (do (if (>= (.lastModified file) @last-check)
+               (swap! jobs conj [:upload file dest]))
+             (swap! files conj [file dest])))
+       settings)
+      
+      ;; Build job
+      (let [diff (data/diff @files @indexed-files)]
+        (when-not (= @last-check 0)
+          (dorun
+           (for [new-file (first diff)]
+             (swap! jobs conj [:upload (first new-file) (second new-file)])))
+          (dorun
+           (for [removed-file (second diff)]
+             (do
+               (swap! jobs conj [:delete (second removed-file)])
+               (swap! indexed-files #(remove #{removed-file} %)))))))
 
-        ;; Run job
-        (process-jobs! settings @jobs)
+      ;; Run job
+      (process-jobs! settings @jobs)
 
-        (if-not (empty? @jobs)
-          (tverboseln (clansi/style "Waiting for changes..." :blue)))
+      (if-not (empty? @jobs)
+        (tverboseln (clansi/style "Waiting for changes..." :blue)))
 
-        ;; Prepare for next loop.
-        (reset! indexed-files @files)
-        (reset! files #{})
-        (reset! jobs #{})
-        (reset! last-check (- (System/currentTimeMillis) 1000))
-        (Thread/sleep 1000)))))
+      ;; Prepare for next loop.
+      (reset! indexed-files @files)
+      (reset! files #{})
+      (reset! jobs #{})
+      (reset! last-check (- (System/currentTimeMillis) 1000))
+      (Thread/sleep 1000))))
 
 (defn -main
   [config & args]
