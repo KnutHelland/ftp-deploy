@@ -34,8 +34,14 @@ path in **:host**.
 
 ## Run
 
-Create a executable with `lein uberjar`
+Create a executable with
+```bash
+lein uberjar
+```
 
-And use the executable with the command `java -jar ftp-deploy.jar production.ftp-profile --watch`
+And use the executable with the command
+```bash
+java -jar ftp-deploy.jar production.ftp-profile --watch
+```
 
 (can of course omit the --watch)
